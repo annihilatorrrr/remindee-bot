@@ -665,6 +665,7 @@ mod test {
                 .message(bot.get_responses().sent_messages[0].clone()),
         );
         bot.dispatch().await;
+        assert_eq!(bot.get_responses().answered_callback_queries.len(), 1);
         assert_eq!(
             resp!(bot, edited_messages_reply_markup, message.kind),
             vec![MockMarkup {
@@ -761,6 +762,7 @@ mod test {
             ),
         );
         bot.dispatch().await;
+        assert_eq!(bot.get_responses().answered_callback_queries.len(), 1);
         assert_eq!(
             resp!(bot, edited_messages_reply_markup, message.kind),
             vec![MockMarkup {

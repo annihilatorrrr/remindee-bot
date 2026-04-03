@@ -359,12 +359,14 @@ async fn try_handle_timezone_callback(
     cb_data: &str,
 ) -> Result<bool, RequestError> {
     if callbacks::is_select_timezone_back(cb_data) {
+        ctl.acknowledge_callback().await?;
         ctl.msg_ctl.select_timezone_prefixes().await?;
         Ok(true)
     } else if let Some(prefix) =
         callbacks::parse_select_timezone_prefix(cb_data)
     {
         if tz::get_tz_names_for_prefix_page(prefix, 0).is_some() {
+            ctl.acknowledge_callback().await?;
             ctl.msg_ctl
                 .select_timezone_children_set_page(prefix, 0)
                 .await?;
@@ -376,6 +378,7 @@ async fn try_handle_timezone_callback(
         callbacks::parse_select_timezone_child_page(cb_data)
     {
         if tz::get_tz_names_for_prefix_page(prefix, page_num).is_some() {
+            ctl.acknowledge_callback().await?;
             ctl.msg_ctl
                 .select_timezone_children_set_page(prefix, page_num)
                 .await?;
@@ -461,6 +464,7 @@ async fn callback_handler(
         callbacks::ReminderListKind::Delete,
         &cb_data,
     ) {
+        ctl.acknowledge_callback().await?;
         ctl.msg_ctl
             .delete_reminder_set_page(page_num, user_tz)
             .await
@@ -477,6 +481,7 @@ async fn callback_handler(
         callbacks::ReminderListKind::Edit,
         &cb_data,
     ) {
+        ctl.acknowledge_callback().await?;
         ctl.msg_ctl
             .edit_reminder_set_page(page_num, user_tz)
             .await
@@ -493,6 +498,7 @@ async fn callback_handler(
         callbacks::ReminderListKind::Pause,
         &cb_data,
     ) {
+        ctl.acknowledge_callback().await?;
         ctl.msg_ctl
             .pause_reminder_set_page(page_num, user_tz)
             .await
