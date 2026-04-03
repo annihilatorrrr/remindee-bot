@@ -547,6 +547,12 @@ mod test {
         .await;
     }
 
+    macro_rules! resp {
+        ($bot:expr, $field:ident, $($subfields:tt)+) => {
+            $bot.get_responses().$field.iter().map(|m| (m.$($subfields)+).clone()).collect::<Vec<_>>()
+        };
+    }
+
     #[tokio::test]
     async fn test_set_timezone() {
         let message = MockMessageText::new().text("/settimezone");
@@ -554,16 +560,267 @@ mod test {
         db.expect_get_user_language_name()
             .returning(|_| Ok(Some(mock_language_name())));
         let mut bot = mock_bot(db, message);
-        bot.dispatch_and_check_last_text(
-            &TgResponse::SelectTimezone.to_string(),
-        )
-        .await;
+        bot.dispatch().await;
+        assert_eq!(
+            resp!(bot, sent_messages, kind),
+            vec![MockMarkup {
+                media_text: TgResponse::SelectTimezone.to_string(),
+                markup: InlineKeyboardMarkup {
+                    inline_keyboard: vec![
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Africa".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Africa".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "America".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::America".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Antarctica".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Antarctica".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Asia".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Asia".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Atlantic".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Atlantic".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Australia".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Australia".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Europe".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Europe".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Indian".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Indian".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![InlineKeyboardButton {
+                            text: "Pacific".to_string(),
+                            kind: CallbackData(
+                                "seltz::prefix::Pacific".to_string(),
+                            ),
+                        }],
+                    ],
+                },
+            }
+            .into()]
+        );
     }
 
-    macro_rules! resp {
-        ($bot:expr, $field:ident, $($subfields:tt)+) => {
-            $bot.get_responses().$field.iter().map(|m| (m.$($subfields)+).clone()).collect::<Vec<_>>()
-        };
+    #[tokio::test]
+    async fn test_set_timezone_prefix_and_back() {
+        let message = MockMessageText::new().text("/settimezone");
+        let mut db = MockDatabase::new();
+        db.expect_get_user_language_name()
+            .times(2)
+            .returning(|_| Ok(Some(mock_language_name())));
+        let mut bot = mock_bot(db, message);
+
+        bot.dispatch().await;
+        bot.update(
+            MockCallbackQuery::new()
+                .data("seltz::prefix::Antarctica")
+                .message(bot.get_responses().sent_messages[0].clone()),
+        );
+        bot.dispatch().await;
+        assert_eq!(
+            resp!(bot, edited_messages_reply_markup, message.kind),
+            vec![MockMarkup {
+                media_text: TgResponse::SelectTimezone.to_string(),
+                markup: InlineKeyboardMarkup {
+                    inline_keyboard: vec![
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Casey".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Casey".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Davis".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Davis".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "DumontDUrville".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/DumontDUrville"
+                                        .to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Macquarie".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Macquarie"
+                                        .to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Mawson".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Mawson".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Palmer".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Palmer".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Rothera".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Rothera".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Syowa".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Syowa".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Troll".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Troll".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Vostok".to_string(),
+                                kind: CallbackData(
+                                    "seltz::tz::Antarctica/Vostok".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![InlineKeyboardButton {
+                            text: "Choose another region".to_string(),
+                            kind: CallbackData("seltz::back".to_string()),
+                        }],
+                    ],
+                },
+            }
+            .into()]
+        );
+
+        bot.update(
+            MockCallbackQuery::new().data("seltz::back").message(
+                bot.get_responses().edited_messages_reply_markup[0]
+                    .message
+                    .clone(),
+            ),
+        );
+        bot.dispatch().await;
+        assert_eq!(
+            resp!(bot, edited_messages_reply_markup, message.kind),
+            vec![MockMarkup {
+                media_text: TgResponse::SelectTimezone.to_string(),
+                markup: InlineKeyboardMarkup {
+                    inline_keyboard: vec![
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Africa".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Africa".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "America".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::America".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Antarctica".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Antarctica".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Asia".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Asia".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Atlantic".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Atlantic".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Australia".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Australia".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![
+                            InlineKeyboardButton {
+                                text: "Europe".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Europe".to_string(),
+                                ),
+                            },
+                            InlineKeyboardButton {
+                                text: "Indian".to_string(),
+                                kind: CallbackData(
+                                    "seltz::prefix::Indian".to_string(),
+                                ),
+                            },
+                        ],
+                        vec![InlineKeyboardButton {
+                            text: "Pacific".to_string(),
+                            kind: CallbackData(
+                                "seltz::prefix::Pacific".to_string(),
+                            ),
+                        }],
+                    ],
+                },
+            }
+            .into()]
+        );
     }
 
     struct MockMarkup {

@@ -5,6 +5,7 @@ use teloxide::{
     prelude::*,
     types::Location,
     utils::command::BotCommands,
+    RequestError,
 };
 
 #[cfg(not(test))]
@@ -353,18 +354,53 @@ async fn message_handler(
         .map_err(From::from)
 }
 
+async fn try_handle_timezone_callback(
+    ctl: &TgCallbackController,
+    cb_data: &str,
+) -> Result<bool, RequestError> {
+    if callbacks::is_select_timezone_back(cb_data) {
+        ctl.msg_ctl.select_timezone_prefixes().await?;
+        Ok(true)
+    } else if let Some(prefix) =
+        callbacks::parse_select_timezone_prefix(cb_data)
+    {
+        if tz::get_tz_names_for_prefix_page(prefix, 0).is_some() {
+            ctl.msg_ctl
+                .select_timezone_children_set_page(prefix, 0)
+                .await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    } else if let Some((prefix, page_num)) =
+        callbacks::parse_select_timezone_child_page(cb_data)
+    {
+        if tz::get_tz_names_for_prefix_page(prefix, page_num).is_some() {
+            ctl.msg_ctl
+                .select_timezone_children_set_page(prefix, page_num)
+                .await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    } else if let Some(tz_name) = callbacks::parse_select_timezone_tz(cb_data) {
+        if tz_name.parse::<Tz>().is_ok() {
+            ctl.set_timezone(tz_name).await?;
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    } else {
+        Ok(false)
+    }
+}
+
 async fn select_timezone_handler(
     ctl: TgCallbackController,
     cb_data: String,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(page_num) = callbacks::parse_select_timezone_page(&cb_data) {
-        ctl.msg_ctl
-            .select_timezone_set_page(page_num)
-            .await
-            .map_err(From::from)
-    } else if let Some(tz_name) = callbacks::parse_select_timezone_tz(&cb_data)
-    {
-        ctl.set_timezone(tz_name).await.map_err(From::from)
+    if try_handle_timezone_callback(&ctl, &cb_data).await? {
+        Ok(())
     } else {
         ctl.msg_ctl.reply(TgResponse::IncorrectRequest).await?;
         ctl.acknowledge_callback().await.map_err(From::from)
@@ -414,14 +450,8 @@ async fn callback_handler(
     user_tz: Tz,
     dialogue: MyDialogue,
 ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-    if let Some(page_num) = callbacks::parse_select_timezone_page(&cb_data) {
-        ctl.msg_ctl
-            .select_timezone_set_page(page_num)
-            .await
-            .map_err(From::from)
-    } else if let Some(tz_name) = callbacks::parse_select_timezone_tz(&cb_data)
-    {
-        ctl.set_timezone(tz_name).await.map_err(From::from)
+    if try_handle_timezone_callback(&ctl, &cb_data).await? {
+        Ok(())
     } else if callbacks::is_settings_change_language(&cb_data) {
         ctl.msg_ctl.choose_language().await?;
         ctl.acknowledge_callback().await.map_err(From::from)

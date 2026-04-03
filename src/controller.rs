@@ -167,12 +167,12 @@ impl TgMessageController {
             .map(|_| ())
     }
 
-    /// Send a markup with all timezones to select
+    /// Send a markup with timezone prefixes to select
     pub(crate) async fn choose_timezone(&self) -> Result<(), RequestError> {
         let lang = self.user_lang().await;
         tg::send_markup(
             &TgResponse::SelectTimezone.to_string_lang(lang.code()),
-            markup::timezone_page_markup(0, tz::get_tz_names_for_page_idx(0)),
+            markup::timezone_page_markup(tz::get_tz_prefixes()),
             &self.bot,
             self.chat_id,
         )
@@ -483,15 +483,38 @@ impl TgMessageController {
         self.reply(TgResponse::IncorrectRequest).await.map(|_| ())
     }
 
-    /// Switch the markup's page
-    pub(crate) async fn select_timezone_set_page(
+    /// Switch the markup back to the timezone prefixes
+    pub(crate) async fn select_timezone_prefixes(
         &self,
-        page_num: usize,
     ) -> Result<(), RequestError> {
         tg::edit_markup(
-            markup::timezone_page_markup(
+            markup::timezone_page_markup(tz::get_tz_prefixes()),
+            &self.bot,
+            self.msg_id,
+            self.chat_id,
+        )
+        .await
+    }
+
+    /// Switch the markup to a selected timezone prefix page
+    pub(crate) async fn select_timezone_children_set_page(
+        &self,
+        prefix: &str,
+        page_num: usize,
+    ) -> Result<(), RequestError> {
+        let lang = self.user_lang().await;
+        let tz_names = tz::get_tz_names_for_prefix_page(prefix, page_num)
+            .unwrap_or_default();
+        let has_next_page =
+            tz::get_tz_names_for_prefix_page(prefix, page_num + 1).is_some();
+
+        tg::edit_markup(
+            markup::timezone_child_page_markup(
+                lang,
+                prefix,
                 page_num,
-                tz::get_tz_names_for_page_idx(page_num),
+                tz_names,
+                has_next_page,
             ),
             &self.bot,
             self.msg_id,

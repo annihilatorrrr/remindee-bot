@@ -1,6 +1,8 @@
 const SELECT_TIMEZONE_PREFIX: &str = "seltz::";
-const SELECT_TIMEZONE_PAGE_PREFIX: &str = "seltz::page::";
+const SELECT_TIMEZONE_PREFIX_PREFIX: &str = "seltz::prefix::";
+const SELECT_TIMEZONE_CHILD_PAGE_PREFIX: &str = "seltz::child_page::";
 const SELECT_TIMEZONE_TZ_PREFIX: &str = "seltz::tz::";
+const SELECT_TIMEZONE_BACK: &str = "seltz::back";
 
 const SET_LANGUAGE_PREFIX: &str = "setlang::";
 const SET_LANGUAGE_CODE_PREFIX: &str = "setlang::lang::";
@@ -44,12 +46,28 @@ pub(crate) fn is_select_timezone(data: &str) -> bool {
     data.starts_with(SELECT_TIMEZONE_PREFIX)
 }
 
-pub(crate) fn select_timezone_page(page_num: usize) -> String {
-    format!("{SELECT_TIMEZONE_PAGE_PREFIX}{page_num}")
+pub(crate) fn select_timezone_prefix(prefix: &str) -> String {
+    format!("{SELECT_TIMEZONE_PREFIX_PREFIX}{prefix}")
 }
 
-pub(crate) fn parse_select_timezone_page(data: &str) -> Option<usize> {
-    parse_usize_with_prefix(SELECT_TIMEZONE_PAGE_PREFIX, data)
+pub(crate) fn parse_select_timezone_prefix(data: &str) -> Option<&str> {
+    data.strip_prefix(SELECT_TIMEZONE_PREFIX_PREFIX)
+        .filter(|prefix| !prefix.is_empty())
+}
+
+pub(crate) fn select_timezone_child_page(
+    prefix: &str,
+    page_num: usize,
+) -> String {
+    format!("{SELECT_TIMEZONE_CHILD_PAGE_PREFIX}{prefix}::{page_num}")
+}
+
+pub(crate) fn parse_select_timezone_child_page(
+    data: &str,
+) -> Option<(&str, usize)> {
+    let data = data.strip_prefix(SELECT_TIMEZONE_CHILD_PAGE_PREFIX)?;
+    let (prefix, page_num) = data.rsplit_once("::")?;
+    Some((prefix, page_num.parse::<usize>().ok()?))
 }
 
 pub(crate) fn select_timezone_tz(tz_name: &str) -> String {
@@ -58,6 +76,14 @@ pub(crate) fn select_timezone_tz(tz_name: &str) -> String {
 
 pub(crate) fn parse_select_timezone_tz(data: &str) -> Option<&str> {
     data.strip_prefix(SELECT_TIMEZONE_TZ_PREFIX)
+}
+
+pub(crate) fn select_timezone_back() -> String {
+    SELECT_TIMEZONE_BACK.to_owned()
+}
+
+pub(crate) fn is_select_timezone_back(data: &str) -> bool {
+    data == SELECT_TIMEZONE_BACK
 }
 
 pub(crate) fn is_set_language(data: &str) -> bool {
@@ -143,12 +169,15 @@ pub(crate) fn parse_edit_mode_description(data: &str) -> Option<i64> {
 mod tests {
     use super::{
         done_occurrence, edit_mode_description, edit_mode_time_pattern,
-        is_done_occurrence, is_select_timezone, is_set_language, is_settings,
-        is_settings_change_language, parse_done_occurrence,
-        parse_edit_mode_description, parse_edit_mode_time_pattern,
-        parse_reminder_alter, parse_reminder_page, parse_select_timezone_page,
-        parse_select_timezone_tz, parse_set_language, reminder_alter,
-        reminder_page, select_timezone_page, select_timezone_tz, set_language,
+        is_done_occurrence, is_select_timezone, is_select_timezone_back,
+        is_set_language, is_settings, is_settings_change_language,
+        parse_done_occurrence, parse_edit_mode_description,
+        parse_edit_mode_time_pattern, parse_reminder_alter,
+        parse_reminder_page, parse_select_timezone_child_page,
+        parse_select_timezone_prefix, parse_select_timezone_tz,
+        parse_set_language, reminder_alter, reminder_page,
+        select_timezone_back, select_timezone_child_page,
+        select_timezone_prefix, select_timezone_tz, set_language,
         settings_change_language, ReminderListKind,
     };
 
@@ -167,13 +196,24 @@ mod tests {
 
     #[test]
     fn timezone_callbacks_roundtrip() {
-        let page = select_timezone_page(3);
-        assert!(is_select_timezone(&page));
-        assert_eq!(parse_select_timezone_page(&page), Some(3));
+        let prefix = select_timezone_prefix("Europe");
+        assert!(is_select_timezone(&prefix));
+        assert_eq!(parse_select_timezone_prefix(&prefix), Some("Europe"));
+
+        let child_page = select_timezone_child_page("America", 3);
+        assert!(is_select_timezone(&child_page));
+        assert_eq!(
+            parse_select_timezone_child_page(&child_page),
+            Some(("America", 3))
+        );
 
         let tz = select_timezone_tz("Europe/Amsterdam");
         assert!(is_select_timezone(&tz));
         assert_eq!(parse_select_timezone_tz(&tz), Some("Europe/Amsterdam"));
+
+        let back = select_timezone_back();
+        assert!(is_select_timezone(&back));
+        assert!(is_select_timezone_back(&back));
     }
 
     #[test]

@@ -40,52 +40,83 @@ pub(crate) fn edit_mode_markup(
 }
 
 pub(crate) fn timezone_page_markup(
-    num: usize,
-    tz_names: Option<Vec<&'static str>>,
+    prefixes: &[&'static str],
 ) -> InlineKeyboardMarkup {
     let mut markup = InlineKeyboardMarkup::default();
-    let mut last_page = false;
 
-    if let Some(tz_names) = tz_names {
-        for chunk in tz_names.chunks(2) {
-            markup = markup.append_row(
-                chunk
-                    .iter()
-                    .copied()
-                    .map(|tz_name| {
-                        InlineKeyboardButton::new(
-                            tz_name,
-                            InlineKeyboardButtonKind::CallbackData(
-                                callbacks::select_timezone_tz(tz_name),
-                            ),
-                        )
-                    })
-                    .collect::<Vec<_>>(),
-            );
-        }
-    } else {
-        last_page = true;
+    for chunk in prefixes.chunks(2) {
+        markup = markup.append_row(
+            chunk
+                .iter()
+                .copied()
+                .map(|prefix| {
+                    InlineKeyboardButton::new(
+                        prefix,
+                        InlineKeyboardButtonKind::CallbackData(
+                            callbacks::select_timezone_prefix(prefix),
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        );
+    }
+
+    markup
+}
+
+pub(crate) fn timezone_child_page_markup(
+    lang: Language,
+    prefix: &str,
+    num: usize,
+    tz_names: Vec<(&'static str, &'static str)>,
+    has_next_page: bool,
+) -> InlineKeyboardMarkup {
+    let mut markup = InlineKeyboardMarkup::default();
+
+    for chunk in tz_names.chunks(2) {
+        markup = markup.append_row(
+            chunk
+                .iter()
+                .copied()
+                .map(|(child_name, tz_name)| {
+                    InlineKeyboardButton::new(
+                        child_name,
+                        InlineKeyboardButtonKind::CallbackData(
+                            callbacks::select_timezone_tz(tz_name),
+                        ),
+                    )
+                })
+                .collect::<Vec<_>>(),
+        );
     }
 
     let mut move_buttons = vec![];
     if num > 0 {
         move_buttons.push(InlineKeyboardButton::new(
-            "⬅️",
+            format!("‹ {}", t!("Prev", locale = lang.code())),
             InlineKeyboardButtonKind::CallbackData(
-                callbacks::select_timezone_page(num - 1),
+                callbacks::select_timezone_child_page(prefix, num - 1),
             ),
         ));
     }
-    if !last_page {
+    if has_next_page {
         move_buttons.push(InlineKeyboardButton::new(
-            "➡️",
+            format!("{} ›", t!("Next", locale = lang.code())),
             InlineKeyboardButtonKind::CallbackData(
-                callbacks::select_timezone_page(num + 1),
+                callbacks::select_timezone_child_page(prefix, num + 1),
             ),
         ));
+    }
+    if !move_buttons.is_empty() {
+        markup = markup.append_row(move_buttons);
     }
 
-    markup.append_row(move_buttons)
+    markup.append_row(vec![InlineKeyboardButton::new(
+        t!("ChooseAnotherRegion", locale = lang.code()),
+        InlineKeyboardButtonKind::CallbackData(
+            callbacks::select_timezone_back(),
+        ),
+    )])
 }
 
 pub(crate) fn languages_markup(
@@ -160,4 +191,55 @@ pub(crate) fn reminders_page_markup(
     }
 
     markup.append_row(move_buttons)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::timezone_child_page_markup;
+    use crate::lang::Language;
+    use teloxide::types::{
+        InlineKeyboardButton, InlineKeyboardButtonKind::CallbackData,
+        InlineKeyboardMarkup,
+    };
+
+    #[test]
+    fn timezone_child_page_markup_uses_distinct_navigation_labels() {
+        assert_eq!(
+            timezone_child_page_markup(
+                Language::English,
+                "America",
+                1,
+                vec![("Chicago", "America/Chicago")],
+                true,
+            ),
+            InlineKeyboardMarkup {
+                inline_keyboard: vec![
+                    vec![InlineKeyboardButton {
+                        text: "Chicago".to_string(),
+                        kind: CallbackData(
+                            "seltz::tz::America/Chicago".to_string()
+                        ),
+                    }],
+                    vec![
+                        InlineKeyboardButton {
+                            text: "‹ Prev".to_string(),
+                            kind: CallbackData(
+                                "seltz::child_page::America::0".to_string(),
+                            ),
+                        },
+                        InlineKeyboardButton {
+                            text: "Next ›".to_string(),
+                            kind: CallbackData(
+                                "seltz::child_page::America::2".to_string(),
+                            ),
+                        },
+                    ],
+                    vec![InlineKeyboardButton {
+                        text: "Choose another region".to_string(),
+                        kind: CallbackData("seltz::back".to_string()),
+                    }],
+                ],
+            }
+        );
+    }
 }
