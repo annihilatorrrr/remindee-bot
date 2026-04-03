@@ -22,6 +22,7 @@ mod m20260131_120000_migrate_cron_reminders;
 mod m20260204_000001_create_reminder_message_is_delivery_column;
 mod m20260205_000001_add_nagging_occurrences;
 mod m20260211_120000_optimize_lookup_indexes;
+mod m20260402_120000_add_reminder_chat_paused_time_index;
 
 pub struct Migrator;
 
@@ -57,6 +58,9 @@ impl MigratorTrait for Migrator {
             ),
             Box::new(m20260205_000001_add_nagging_occurrences::Migration),
             Box::new(m20260211_120000_optimize_lookup_indexes::Migration),
+            Box::new(
+                m20260402_120000_add_reminder_chat_paused_time_index::Migration,
+            ),
         ]
     }
 }
