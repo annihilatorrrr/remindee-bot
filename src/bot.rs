@@ -123,130 +123,138 @@ async fn process_due_reminders(db: &Database, bot: &Bot) {
         .get_active_reminders()
         .await
         .expect("Failed to get reminders from database");
+    let mut user_context_cache: HashMap<i64, (Tz, Language)> = HashMap::new();
     for reminder in reminders {
-        if let Some(user_id) = reminder.user_id.map(|x| UserId(x as u64)) {
-            if let Ok(Some(user_timezone)) =
-                get_user_timezone(db, user_id).await
+        if let Some(user_id) = reminder.user_id {
+            let (user_timezone, lang) = if let Some(cached) =
+                user_context_cache.get(&user_id)
             {
+                *cached
+            } else {
+                let user_id = UserId(user_id as u64);
+                let user_timezone = match get_user_timezone(db, user_id).await {
+                    Ok(Some(user_timezone)) => user_timezone,
+                    _ => continue,
+                };
                 let lang = get_user_language(db, user_id).await;
-                let mut next_reminder = None;
-                let mut next_occurrence_time = None;
-                if let Some(ref serialized) = reminder.pattern {
-                    let mut pattern: Pattern = from_str(serialized).unwrap();
-                    let lower_bound = max(reminder.time, now_time());
-                    if let Some(next_time) = pattern.next(lower_bound) {
-                        next_occurrence_time = Some(next_time);
-                        next_reminder = Some(reminder::Model {
-                            time: next_time,
-                            pattern: to_string(&pattern).ok(),
-                            ..reminder.clone()
-                        });
-                    }
-                }
-                let mut rollover_prev_msg_id = None;
-                if reminder.nag_interval_sec.is_some() {
-                    let closed_rows =
-                        match db.close_open_occurrences(&reminder.rec_id).await
-                        {
-                            Ok(rows_affected) => rows_affected,
-                            Err(err) => {
-                                log::error!("{err}");
-                                0
-                            }
-                        };
-                    if closed_rows > 0 {
-                        rollover_prev_msg_id = match db
-                            .get_latest_reminder_message_id(
-                                reminder.chat_id,
-                                &reminder.rec_id,
-                            )
-                            .await
-                        {
-                            Ok(msg_id) => msg_id,
-                            Err(err) => {
-                                log::error!("{err}");
-                                None
-                            }
-                        };
-                    }
-                }
+                user_context_cache
+                    .insert(user_id.0 as i64, (user_timezone, lang));
+                (user_timezone, lang)
+            };
 
-                let mut created_occurrence = None;
-                let send_result = if let Some(nag_interval_sec) =
-                    reminder.nag_interval_sec
-                {
-                    match db
-                        .insert_reminder_occurrence(InsertReminderOccurrence {
-                            rec_id: reminder.rec_id.clone(),
-                            chat_id: reminder.chat_id,
-                            user_id: reminder.user_id,
-                            due_at: reminder.time,
-                            nag_interval_sec,
-                            stop_at: next_occurrence_time,
-                            desc_snapshot: reminder.desc.clone(),
-                        })
-                        .await
-                    {
-                        Ok(occ) => {
-                            created_occurrence = Some(occ.id);
-                            send_reminder(
-                                &reminder,
-                                user_timezone,
-                                lang,
-                                Some(occ.id),
-                                bot,
-                            )
-                            .await
-                        }
+            let mut next_reminder = None;
+            let mut next_occurrence_time = None;
+            if let Some(ref serialized) = reminder.pattern {
+                let mut pattern: Pattern = from_str(serialized).unwrap();
+                let lower_bound = max(reminder.time, now_time());
+                if let Some(next_time) = pattern.next(lower_bound) {
+                    next_occurrence_time = Some(next_time);
+                    next_reminder = Some(reminder::Model {
+                        time: next_time,
+                        pattern: to_string(&pattern).ok(),
+                        ..reminder.clone()
+                    });
+                }
+            }
+            let mut rollover_prev_msg_id = None;
+            if reminder.nag_interval_sec.is_some() {
+                let closed_rows =
+                    match db.close_open_occurrences(&reminder.rec_id).await {
+                        Ok(rows_affected) => rows_affected,
                         Err(err) => {
                             log::error!("{err}");
-                            continue;
+                            0
                         }
-                    }
-                } else {
-                    send_reminder(&reminder, user_timezone, lang, None, bot)
-                        .await
-                };
-
-                if let Ok(sent_msg) = send_result {
-                    if let Err(err) = db
-                        .insert_reminder_message(
-                            &reminder.rec_id,
+                    };
+                if closed_rows > 0 {
+                    rollover_prev_msg_id = match db
+                        .get_latest_reminder_message_id(
                             reminder.chat_id,
-                            sent_msg.id.0,
-                            true,
+                            &reminder.rec_id,
                         )
                         .await
                     {
-                        log::error!("{err}");
-                    }
-                    clear_previous_done_markup(
-                        bot,
-                        reminder.chat_id,
-                        rollover_prev_msg_id,
-                        sent_msg.id.0,
-                    )
-                    .await;
-                    db.delete_reminder(reminder.id).await.unwrap_or_else(
-                        |err| {
+                        Ok(msg_id) => msg_id,
+                        Err(err) => {
                             log::error!("{err}");
-                        },
-                    );
-                    if let Some(next_reminder) = next_reminder {
-                        let mut next_reminder: reminder::ActiveModel =
-                            next_reminder.into();
-                        next_reminder.id = NotSet;
-                        db.insert_reminder(next_reminder)
-                            .await
-                            .map(|_| ())
-                            .unwrap_or_else(|err| {
-                                log::error!("{err}");
-                            });
+                            None
+                        }
+                    };
+                }
+            }
+
+            let mut created_occurrence = None;
+            let send_result = if let Some(nag_interval_sec) =
+                reminder.nag_interval_sec
+            {
+                match db
+                    .insert_reminder_occurrence(InsertReminderOccurrence {
+                        rec_id: reminder.rec_id.clone(),
+                        chat_id: reminder.chat_id,
+                        user_id: reminder.user_id,
+                        due_at: reminder.time,
+                        nag_interval_sec,
+                        stop_at: next_occurrence_time,
+                        desc_snapshot: reminder.desc.clone(),
+                    })
+                    .await
+                {
+                    Ok(occ) => {
+                        created_occurrence = Some(occ.id);
+                        send_reminder(
+                            &reminder,
+                            user_timezone,
+                            lang,
+                            Some(occ.id),
+                            bot,
+                        )
+                        .await
                     }
-                } else if let Some(occ_id) = created_occurrence {
-                    if let Err(err) = db.delete_occurrence(occ_id).await {
+                    Err(err) => {
                         log::error!("{err}");
+                        continue;
                     }
+                }
+            } else {
+                send_reminder(&reminder, user_timezone, lang, None, bot).await
+            };
+
+            if let Ok(sent_msg) = send_result {
+                if let Err(err) = db
+                    .insert_reminder_message(
+                        &reminder.rec_id,
+                        reminder.chat_id,
+                        sent_msg.id.0,
+                        true,
+                    )
+                    .await
+                {
+                    log::error!("{err}");
+                }
+                clear_previous_done_markup(
+                    bot,
+                    reminder.chat_id,
+                    rollover_prev_msg_id,
+                    sent_msg.id.0,
+                )
+                .await;
+                db.delete_reminder(reminder.id).await.unwrap_or_else(|err| {
+                    log::error!("{err}");
+                });
+                if let Some(next_reminder) = next_reminder {
+                    let mut next_reminder: reminder::ActiveModel =
+                        next_reminder.into();
+                    next_reminder.id = NotSet;
+                    db.insert_reminder(next_reminder)
+                        .await
+                        .map(|_| ())
+                        .unwrap_or_else(|err| {
+                            log::error!("{err}");
+                        });
+                }
+            } else if let Some(occ_id) = created_occurrence {
+                if let Err(err) = db.delete_occurrence(occ_id).await {
+                    log::error!("{err}");
                 }
             }
         }
