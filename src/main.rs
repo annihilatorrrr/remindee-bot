@@ -1,5 +1,3 @@
-#[macro_use]
-extern crate lazy_static;
 extern crate pretty_env_logger;
 #[macro_use]
 extern crate rust_i18n;

@@ -1,11 +1,9 @@
-use std::{ffi::OsString, path::PathBuf};
+use std::{ffi::OsString, path::PathBuf, sync::LazyLock};
 
 use clap::Parser;
 use directories::BaseDirs;
 
-lazy_static::lazy_static! {
-    pub(crate) static ref CLI: Cli = parse_args();
-}
+pub(crate) static CLI: LazyLock<Cli> = LazyLock::new(parse_args);
 
 #[derive(Parser)]
 #[command(author, version, about, long_about = None)]

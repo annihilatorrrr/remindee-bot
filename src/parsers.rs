@@ -325,15 +325,17 @@ pub(crate) mod test {
     use serial_test::serial;
     use test_case::test_case;
     extern crate strfmt;
-    use std::{collections::HashMap, sync::RwLock};
+    use std::{
+        collections::HashMap,
+        sync::{LazyLock, RwLock},
+    };
     use strfmt::strfmt;
 
-    lazy_static! {
-        pub(crate) static ref TEST_TZ: Tz =
-            "Europe/Moscow".parse::<Tz>().unwrap();
-        pub(crate) static ref TEST_TIME: DateTime<Tz> =
-            TEST_TZ.with_ymd_and_hms(2007, 2, 2, 12, 30, 30).unwrap();
-    }
+    pub(crate) static TEST_TZ: LazyLock<Tz> =
+        LazyLock::new(|| "Europe/Moscow".parse::<Tz>().unwrap());
+    pub(crate) static TEST_TIME: LazyLock<DateTime<Tz>> = LazyLock::new(|| {
+        TEST_TZ.with_ymd_and_hms(2007, 2, 2, 12, 30, 30).unwrap()
+    });
 
     pub(crate) static TEST_TIMESTAMP: RwLock<i64> = RwLock::new(0);
     const TEST_DESCRIPTION: &str = "reminder description";

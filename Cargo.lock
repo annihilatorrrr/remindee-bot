@@ -3275,7 +3275,6 @@ dependencies = [
  "clap",
  "cron-parser",
  "directories",
- "lazy_static",
  "log",
  "mockall",
  "nonempty",
