@@ -23,6 +23,8 @@ use teloxide::types::{InlineKeyboardMarkup, MessageId};
 use teloxide::{ApiError, RequestError};
 use tg::TgResponse;
 
+const REMINDER_PAGE_SIZE: usize = 15;
+
 #[derive(Clone, serde::Serialize, serde::Deserialize)]
 pub(crate) enum EditMode {
     TimePattern,
@@ -571,23 +573,29 @@ impl TgMessageController {
     ) -> InlineKeyboardMarkup {
         let reminders = self
             .db
-            .get_sorted_reminders(self.chat_id.0)
+            .get_sorted_reminders_page(self.chat_id.0, num, REMINDER_PAGE_SIZE)
             .await
-            .ok()
-            .as_ref()
-            .and_then(|rems| rems.chunks(45).nth(num))
-            .map(|reminders| {
-                reminders
-                    .iter()
-                    .map(|rem| ReminderMarkupEntry {
-                        text: rem.to_unescaped_string(user_timezone),
-                        rem_type: rem.get_type(),
-                        rem_id: rem.get_id().unwrap(),
-                    })
-                    .collect::<Vec<_>>()
-            });
+            .unwrap_or_default();
+        let has_next_page = reminders.len() > REMINDER_PAGE_SIZE;
+        let reminders = reminders
+            .into_iter()
+            .take(REMINDER_PAGE_SIZE)
+            .map(|rem| {
+                let rem = rem.into_active_model();
+                ReminderMarkupEntry {
+                    text: rem.to_unescaped_string(user_timezone),
+                    rem_type: rem.get_type(),
+                    rem_id: rem.get_id().unwrap(),
+                }
+            })
+            .collect::<Vec<_>>();
 
-        markup::reminders_page_markup(num, callback_kind, reminders)
+        markup::reminders_page_markup(
+            num,
+            callback_kind,
+            reminders,
+            has_next_page,
+        )
     }
 
     pub(crate) async fn get_markup_for_reminders_page_deletion(

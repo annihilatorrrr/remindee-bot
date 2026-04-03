@@ -148,26 +148,20 @@ pub(crate) fn settings_markup(lang: Language) -> InlineKeyboardMarkup {
 pub(crate) fn reminders_page_markup(
     num: usize,
     callback_kind: callbacks::ReminderListKind,
-    reminders: Option<Vec<ReminderMarkupEntry>>,
+    reminders: Vec<ReminderMarkupEntry>,
+    has_next_page: bool,
 ) -> InlineKeyboardMarkup {
     let mut markup = InlineKeyboardMarkup::default();
-    let mut last_rem_page = false;
 
-    if let Some(reminders) = reminders {
-        for reminder in reminders {
-            markup = markup.append_row(vec![InlineKeyboardButton::new(
-                reminder.text,
-                InlineKeyboardButtonKind::CallbackData(
-                    callbacks::reminder_alter(
-                        callback_kind,
-                        reminder.rem_type,
-                        reminder.rem_id,
-                    ),
-                ),
-            )]);
-        }
-    } else {
-        last_rem_page = true;
+    for reminder in reminders {
+        markup = markup.append_row(vec![InlineKeyboardButton::new(
+            reminder.text,
+            InlineKeyboardButtonKind::CallbackData(callbacks::reminder_alter(
+                callback_kind,
+                reminder.rem_type,
+                reminder.rem_id,
+            )),
+        )]);
     }
 
     let mut move_buttons = vec![];
@@ -180,7 +174,7 @@ pub(crate) fn reminders_page_markup(
             )),
         ));
     }
-    if !last_rem_page {
+    if has_next_page {
         move_buttons.push(InlineKeyboardButton::new(
             "➡️",
             InlineKeyboardButtonKind::CallbackData(callbacks::reminder_page(
@@ -190,7 +184,11 @@ pub(crate) fn reminders_page_markup(
         ));
     }
 
-    markup.append_row(move_buttons)
+    if move_buttons.is_empty() {
+        markup
+    } else {
+        markup.append_row(move_buttons)
+    }
 }
 
 #[cfg(test)]

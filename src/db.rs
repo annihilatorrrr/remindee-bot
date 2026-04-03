@@ -14,7 +14,7 @@ use mockall::automock;
 use sea_orm::{
     ActiveModelTrait, ActiveValue::NotSet, ColumnTrait, Condition,
     ConnectOptions, Database as SeaOrmDatabase, DatabaseConnection,
-    EntityTrait, QueryFilter, QueryOrder, Set,
+    EntityTrait, QueryFilter, QueryOrder, QuerySelect, Set,
 };
 use tokio::sync::futures::Notified;
 use tokio::sync::Notify;
@@ -190,16 +190,6 @@ impl Database {
             .await?)
     }
 
-    pub(crate) async fn get_pending_chat_reminders(
-        &self,
-        chat_id: i64,
-    ) -> Result<Vec<reminder::Model>, Error> {
-        Ok(reminder::Entity::find()
-            .filter(reminder::Column::ChatId.eq(chat_id))
-            .all(&self.pool)
-            .await?)
-    }
-
     pub(crate) async fn get_user_timezone_name(
         &self,
         user_id: i64,
@@ -308,14 +298,34 @@ impl Database {
         &self,
         chat_id: i64,
     ) -> Result<Vec<Box<dyn generic_reminder::GenericReminder>>, Error> {
-        let reminders = self.get_pending_chat_reminders(chat_id).await?;
-
-        let mut all_reminders: Vec<_> = reminders
+        Ok(reminder::Entity::find()
+            .filter(reminder::Column::ChatId.eq(chat_id))
+            .order_by_asc(reminder::Column::Paused)
+            .order_by_asc(reminder::Column::Time)
+            .all(&self.pool)
+            .await?
             .into_iter()
-            .map(|m| Box::new(reminder::ActiveModel::from(m)) as _)
-            .collect();
-        all_reminders.sort_unstable();
-        Ok(all_reminders)
+            .map(|rem| Box::new(reminder::ActiveModel::from(rem)) as _)
+            .collect())
+    }
+
+    pub(crate) async fn get_sorted_reminders_page(
+        &self,
+        chat_id: i64,
+        num: usize,
+        page_size: usize,
+    ) -> Result<Vec<reminder::Model>, Error> {
+        let offset = num.saturating_mul(page_size) as u64;
+        let limit = page_size.saturating_add(1) as u64;
+
+        Ok(reminder::Entity::find()
+            .filter(reminder::Column::ChatId.eq(chat_id))
+            .order_by_asc(reminder::Column::Paused)
+            .order_by_asc(reminder::Column::Time)
+            .offset(offset)
+            .limit(limit)
+            .all(&self.pool)
+            .await?)
     }
 
     pub(crate) async fn get_reminder_by_message(
@@ -617,6 +627,34 @@ mod test {
                 rem2_act.time.unwrap(),
                 rem3_act.time.unwrap(),
             ]
+        );
+    }
+
+    #[tokio::test]
+    async fn test_get_sorted_reminders_page() {
+        let db = new_db_in_memory().await.unwrap();
+        db.apply_migrations().await.unwrap();
+
+        for hour in [3, 1, 4, 2] {
+            let mut rem = basic_mock_new_reminder_act();
+            rem.time = Set(ts(2024, 1, 1, hour, 0, 0));
+            db.insert_reminder(rem).await.unwrap();
+        }
+
+        let page0 = db.get_sorted_reminders_page(1, 0, 2).await.unwrap();
+        let page1 = db.get_sorted_reminders_page(1, 1, 2).await.unwrap();
+
+        assert_eq!(
+            page0.iter().map(|rem| rem.time).collect::<Vec<_>>(),
+            vec![
+                ts(2024, 1, 1, 1, 0, 0),
+                ts(2024, 1, 1, 2, 0, 0),
+                ts(2024, 1, 1, 3, 0, 0),
+            ]
+        );
+        assert_eq!(
+            page1.iter().map(|rem| rem.time).collect::<Vec<_>>(),
+            vec![ts(2024, 1, 1, 3, 0, 0), ts(2024, 1, 1, 4, 0, 0)]
         );
     }
 

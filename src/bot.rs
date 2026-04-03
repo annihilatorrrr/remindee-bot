@@ -470,6 +470,19 @@ mod test {
         }
     }
 
+    fn reminder_page(
+        reminders: &[reminder::Model],
+        num: usize,
+        page_size: usize,
+    ) -> Vec<reminder::Model> {
+        reminders
+            .iter()
+            .skip(num.saturating_mul(page_size))
+            .take(page_size.saturating_add(1))
+            .cloned()
+            .collect()
+    }
+
     fn mock_timezone_name() -> String {
         "Europe/Amsterdam".to_owned()
     }
@@ -865,10 +878,10 @@ mod test {
         let message = MockMessageText::new().text("/delete");
         let mut db = MockDatabase::new();
         let rem = basic_mock_reminder();
-        let rem_clone = rem.clone();
-        db.expect_get_sorted_reminders().returning(move |_| {
-            Ok(vec![Box::new(rem_clone.clone().into_active_model())])
-        });
+        let rems = vec![rem.clone()];
+        db.expect_get_sorted_reminders_page().returning(
+            move |_, num, page_size| Ok(reminder_page(&rems, num, page_size)),
+        );
         db.expect_get_user_timezone_name()
             .returning(|_| Ok(Some(mock_timezone_name())));
         db.expect_get_user_language_name()
@@ -889,18 +902,10 @@ mod test {
             vec![MockMarkup {
                 media_text: TgResponse::ChooseDeleteReminder.to_string(),
                 markup: InlineKeyboardMarkup {
-                    inline_keyboard: vec![
-                        vec![InlineKeyboardButton {
-                            text: "02.02 02:02 <>".to_string(),
-                            kind: CallbackData(
-                                "delrem::rem_alt::1".to_string(),
-                            ),
-                        },],
-                        vec![InlineKeyboardButton {
-                            text: "➡️".to_string(),
-                            kind: CallbackData("delrem::page::1".to_string(),),
-                        },],
-                    ],
+                    inline_keyboard: vec![vec![InlineKeyboardButton {
+                        text: "02.02 02:02 <>".to_string(),
+                        kind: CallbackData("delrem::rem_alt::1".to_string(),),
+                    }]],
                 },
             }
             .into()]
@@ -908,60 +913,8 @@ mod test {
 
         bot.update(
             MockCallbackQuery::new()
-                .data("delrem::page::1")
+                .data("delrem::rem_alt::1")
                 .message(bot.get_responses().sent_messages[0].clone()),
-        );
-        bot.dispatch().await;
-        assert_eq!(
-            resp!(bot, edited_messages_reply_markup, message.kind),
-            vec![MockMarkup {
-                media_text: TgResponse::ChooseDeleteReminder.to_string(),
-                markup: InlineKeyboardMarkup {
-                    inline_keyboard: vec![vec![InlineKeyboardButton {
-                        text: "⬅️".to_string(),
-                        kind: CallbackData("delrem::page::0".to_string(),),
-                    },],],
-                },
-            }
-            .into()]
-        );
-
-        bot.update(
-            MockCallbackQuery::new().data("delrem::page::0").message(
-                bot.get_responses().edited_messages_reply_markup[0]
-                    .message
-                    .clone(),
-            ),
-        );
-        bot.dispatch().await;
-        assert_eq!(
-            resp!(bot, edited_messages_reply_markup, message.kind),
-            vec![MockMarkup {
-                media_text: TgResponse::ChooseDeleteReminder.to_string(),
-                markup: InlineKeyboardMarkup {
-                    inline_keyboard: vec![
-                        vec![InlineKeyboardButton {
-                            text: "02.02 02:02 <>".to_string(),
-                            kind: CallbackData(
-                                "delrem::rem_alt::1".to_string(),
-                            ),
-                        },],
-                        vec![InlineKeyboardButton {
-                            text: "➡️".to_string(),
-                            kind: CallbackData("delrem::page::1".to_string(),),
-                        },],
-                    ],
-                },
-            }
-            .into()]
-        );
-
-        bot.update(
-            MockCallbackQuery::new().data("delrem::rem_alt::1").message(
-                bot.get_responses().edited_messages_reply_markup[0]
-                    .message
-                    .clone(),
-            ),
         );
         bot.dispatch_and_check_last_text(
             &TgResponse::SuccessDelete(
@@ -1017,7 +970,7 @@ mod test {
             .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
             .unwrap()
             .timestamp();
-        const REMINDERS_COUNT: i64 = 45;
+        const REMINDERS_COUNT: i64 = 15;
         let message = MockMessageText::new().text("/delete");
         let mut db = MockDatabase::new();
         let mut rems = vec![];
@@ -1027,14 +980,11 @@ mod test {
             rems.push(rem);
         }
         let rems_clone = rems.clone();
-        db.expect_get_sorted_reminders().returning(move |_| {
-            Ok(rems_clone
-                .iter()
-                .map(|rem| -> Box<dyn GenericReminder> {
-                    Box::new(rem.clone().into_active_model())
-                })
-                .collect())
-        });
+        db.expect_get_sorted_reminders_page().returning(
+            move |_, num, page_size| {
+                Ok(reminder_page(&rems_clone, num, page_size))
+            },
+        );
         db.expect_get_user_timezone_name()
             .returning(|_| Ok(Some(mock_timezone_name())));
         db.expect_get_user_language_name()
@@ -1052,7 +1002,7 @@ mod test {
         }
         let mut bot = mock_bot(db, message);
         bot.dispatch().await;
-        let mut page0_buttons = (1..=REMINDERS_COUNT)
+        let page0_buttons = (1..=REMINDERS_COUNT)
             .map(|i| {
                 vec![InlineKeyboardButton {
                     text: "02.02 02:02 <>".to_string().to_string(),
@@ -1062,10 +1012,6 @@ mod test {
                 }]
             })
             .collect::<Vec<_>>();
-        page0_buttons.push(vec![InlineKeyboardButton {
-            text: "➡️".to_string(),
-            kind: CallbackData("delrem::page::1".to_string()),
-        }]);
         assert_eq!(
             resp!(bot, sent_messages, kind),
             vec![MockMarkup {
@@ -1077,52 +1023,11 @@ mod test {
             .into()]
         );
 
-        bot.update(
-            MockCallbackQuery::new()
-                .data("delrem::page::1")
-                .message(bot.get_responses().sent_messages[0].clone()),
-        );
-        bot.dispatch().await;
-        assert_eq!(
-            resp!(bot, edited_messages_reply_markup, message.kind),
-            vec![MockMarkup {
-                media_text: TgResponse::ChooseDeleteReminder.to_string(),
-                markup: InlineKeyboardMarkup {
-                    inline_keyboard: vec![vec![InlineKeyboardButton {
-                        text: "⬅️".to_string(),
-                        kind: CallbackData("delrem::page::0".to_string(),),
-                    },],],
-                },
-            }
-            .into()]
-        );
-
-        bot.update(
-            MockCallbackQuery::new().data("delrem::page::0").message(
-                bot.get_responses().edited_messages_reply_markup[0]
-                    .message
-                    .clone(),
-            ),
-        );
-        bot.dispatch().await;
-        assert_eq!(
-            resp!(bot, edited_messages_reply_markup, message.kind),
-            vec![MockMarkup {
-                media_text: TgResponse::ChooseDeleteReminder.to_string(),
-                markup: InlineKeyboardMarkup {
-                    inline_keyboard: page0_buttons
-                },
-            }
-            .into()]
-        );
-
         let rem = rems[0].clone();
         bot.update(
-            MockCallbackQuery::new().data("delrem::rem_alt::1").message(
-                bot.get_responses().edited_messages_reply_markup[0]
-                    .message
-                    .clone(),
-            ),
+            MockCallbackQuery::new()
+                .data("delrem::rem_alt::1")
+                .message(bot.get_responses().sent_messages[0].clone()),
         );
         bot.dispatch_and_check_last_text(
             &TgResponse::SuccessDelete(
@@ -1140,8 +1045,8 @@ mod test {
             .with_ymd_and_hms(2024, 1, 1, 0, 0, 0)
             .unwrap()
             .timestamp();
-        const REMINDERS_COUNT: i64 = 46;
-        const PAGE_REMINDERS_COUNT: i64 = 45;
+        const REMINDERS_COUNT: i64 = 16;
+        const PAGE_REMINDERS_COUNT: i64 = 15;
         let message = MockMessageText::new().text("/delete");
         let mut db = MockDatabase::new();
         let mut rems = vec![];
@@ -1152,14 +1057,11 @@ mod test {
             rems.push(rem);
         }
         let rems_clone = rems.clone();
-        db.expect_get_sorted_reminders().returning(move |_| {
-            Ok(rems_clone
-                .iter()
-                .map(|rem| -> Box<dyn GenericReminder> {
-                    Box::new(rem.clone().into_active_model())
-                })
-                .collect())
-        });
+        db.expect_get_sorted_reminders_page().returning(
+            move |_, num, page_size| {
+                Ok(reminder_page(&rems_clone, num, page_size))
+            },
+        );
         db.expect_get_user_timezone_name()
             .returning(|_| Ok(Some(mock_timezone_name())));
         db.expect_get_user_language_name()
@@ -1201,16 +1103,10 @@ mod test {
                 }]
             })
             .collect::<Vec<_>>();
-        page1_buttons.push(vec![
-            InlineKeyboardButton {
-                text: "⬅️".to_string(),
-                kind: CallbackData("delrem::page::0".to_string()),
-            },
-            InlineKeyboardButton {
-                text: "➡️".to_string(),
-                kind: CallbackData("delrem::page::2".to_string()),
-            },
-        ]);
+        page1_buttons.push(vec![InlineKeyboardButton {
+            text: "⬅️".to_string(),
+            kind: CallbackData("delrem::page::0".to_string()),
+        }]);
         assert_eq!(
             resp!(bot, sent_messages, kind),
             vec![MockMarkup {
@@ -1386,9 +1282,8 @@ mod test {
         let rem = basic_mock_reminder();
         let rem_clone = rem.clone();
         let mut db = MockDatabase::new();
-        db.expect_get_sorted_reminders().returning(move |_| {
-            Ok(vec![Box::new(rem_clone.clone().into_active_model())])
-        });
+        db.expect_get_sorted_reminders_page()
+            .returning(move |_, _, _| Ok(vec![rem_clone.clone()]));
         db.expect_get_user_timezone_name()
             .returning(|_| Ok(Some(mock_timezone_name())));
         db.expect_get_user_language_name()
@@ -1451,37 +1346,24 @@ mod test {
             .times(1)
             .returning(move |_| Ok(false));
         let rem_clone = rem.clone();
-        db.expect_get_sorted_reminders().returning(move |_| {
-            Ok(vec![Box::new(rem_clone.clone().into_active_model())])
-        });
+        db.expect_get_sorted_reminders_page()
+            .returning(move |_, _, _| Ok(vec![rem_clone.clone()]));
         let message = MockMessageText::new().text("/pause");
         let mut bot = mock_bot(db, message);
 
         bot.dispatch().await;
         assert_eq!(
             resp!(bot, sent_messages, kind),
-            vec![
-                MockMarkup {
-                    media_text: TgResponse::ChoosePauseReminder.to_string(),
-                    markup: InlineKeyboardMarkup {
-                        inline_keyboard: vec![
-                            vec![InlineKeyboardButton {
-                                text: "02.02 02:02 <>".to_string(),
-                                kind: CallbackData(
-                                    "pauserem::rem_alt::1".to_string(),
-                                ),
-                            },],
-                            vec![InlineKeyboardButton {
-                                text: "➡️".to_string(),
-                                kind: CallbackData(
-                                    "pauserem::page::1".to_string(),
-                                ),
-                            },],
-                        ],
-                    },
-                }
-                .into()
-            ]
+            vec![MockMarkup {
+                media_text: TgResponse::ChoosePauseReminder.to_string(),
+                markup: InlineKeyboardMarkup {
+                    inline_keyboard: vec![vec![InlineKeyboardButton {
+                        text: "02.02 02:02 <>".to_string(),
+                        kind: CallbackData("pauserem::rem_alt::1".to_string(),),
+                    }]],
+                },
+            }
+            .into()]
         );
 
         bot.update(
